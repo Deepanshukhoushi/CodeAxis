@@ -15,10 +15,6 @@ interface AnalysisResult {
   };
 }
 
-interface AnalysisError {
-  message: string;
-}
-
 const ComplexityIndicator: React.FC<{ type: 'time' | 'space'; complexity: string }> = ({ type, complexity }) => {
   const getComplexityColor = (complexity: string) => {
     switch (complexity) {
@@ -70,7 +66,7 @@ const AnalyzerPage: React.FC = () => {
   const [language, setLanguage] = useState('javascript');
   const [results, setResults] = useState<AnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [analysisErrors, setAnalysisErrors] = useState<AnalysisError[]>([]);
+  const [analysisErrors, setAnalysisErrors] = useState<string[]>([]);
 
   const handleAnalyze = async () => {
     setLoading(true);
@@ -79,13 +75,19 @@ const AnalyzerPage: React.FC = () => {
 
     try {
       const result = analyzeComplexity(code, language);
-      if (result.error) {
-        setAnalysisErrors(result.error);
+
+      if ((result as any).error) {
+        // Ensure we store error messages as strings
+        const errorMessages = Array.isArray((result as any).error)
+          ? (result as any).error.map((err: any) => typeof err === 'string' ? err : err.message || 'Unknown error')
+          : [String((result as any).error)];
+        setAnalysisErrors(errorMessages);
         return;
       }
-      setResults(result);
-    } catch (error) {
-      setAnalysisErrors([{ message: 'An error occurred during analysis.' }]);
+
+      setResults(result as AnalysisResult);
+    } catch {
+      setAnalysisErrors(['An error occurred during analysis.']);
     } finally {
       setLoading(false);
     }
@@ -119,18 +121,9 @@ const AnalyzerPage: React.FC = () => {
                 onChange={(e) => setLanguage(e.target.value)}
                 className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
               >
-                <option value="javascript">JavaScript</option>
-                <option value="typescript">TypeScript</option>
-                <option value="python">Python</option>
-                <option value="java">Java</option>
-                <option value="c">C</option>
-                <option value="cpp">C++</option>
-                <option value="csharp">C#</option>
-                <option value="go">Go</option>
-                <option value="rust">Rust</option>
-                <option value="swift">Swift</option>
-                <option value="kotlin">Kotlin</option>
-                <option value="php">PHP</option>
+                {['javascript','typescript','python','java','c','cpp','csharp','go','rust','swift','kotlin','php'].map(lang => (
+                  <option key={lang} value={lang}>{lang.charAt(0).toUpperCase() + lang.slice(1)}</option>
+                ))}
               </select>
               <button
                 onClick={handleAnalyze}
@@ -167,7 +160,7 @@ const AnalyzerPage: React.FC = () => {
                   minimap: { enabled: false },
                   fontSize: 14,
                   lineNumbers: 'on',
-                  scrollBeyond: false,
+                  scrollBeyondLastLine: false,
                   automaticLayout: true,
                 }}
               />
@@ -183,7 +176,7 @@ const AnalyzerPage: React.FC = () => {
                     <h3 className="text-sm font-medium text-red-800 dark:text-red-200">Analysis Errors</h3>
                     <ul className="mt-2 text-sm text-red-700 dark:text-red-300 list-disc list-inside space-y-1">
                       {analysisErrors.map((error, index) => (
-                        <li key={index}>{error.message}</li>
+                        <li key={index}>{error}</li>
                       ))}
                     </ul>
                   </div>
@@ -261,4 +254,4 @@ const AnalyzerPage: React.FC = () => {
   );
 };
 
-export default AnalyzerPage; 
+export default AnalyzerPage;

@@ -28,9 +28,9 @@
     "vite": "^4.4.0"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "npx vite build", 
-    "serve": "vite preview"
+  "dev": "vite",
+  "build": "node --no-warnings node_modules/vite/bin/vite.js build",
+  "serve": "vite preview"
   },
   "eslintConfig": {
     "extends": [

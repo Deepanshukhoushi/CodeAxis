@@ -152,7 +152,7 @@ const AnalyzerPage: React.FC = () => {
             <div className="h-[500px] border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
               <Editor
                 height="100%"
-                defaultLanguage={language}
+                language={language}
                 theme="vs-dark"
                 value={code}
                 onChange={(value) => setCode(value || '')}

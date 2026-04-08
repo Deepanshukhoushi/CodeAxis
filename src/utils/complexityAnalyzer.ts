@@ -8,19 +8,11 @@ interface ComplexityResult {
   spaceComplexity: string;
   explanation: string;
   detailedAnalysis?: {
-    patterns: Array<{
-      type: string;
-      description: string;
-      impact: string;
-      suggestion?: string;
-    }>;
-    metrics: {
-      cyclomaticComplexity?: number;
-      linesOfCode?: number;
-      numberOfFunctions?: number;
-    };
-    impact?: string;
-    suggestions?: string[];
+    patterns: string[];
+    impact: string;
+    suggestions: string[];
+    cyclomaticComplexity: number;
+    linesOfCode: number;
   };
   error?: string[];
 }
@@ -196,109 +188,343 @@ export const analyzeComplexity = (code: string, language: string): ComplexityRes
   let highestTimeComplexity = 'O(1)';
   let highestSpaceComplexity = 'O(1)';
   let explanation = '';
-  let patterns: Array<{ type: string; description: string; impact: string; suggestion?: string }> = [];
-  let impact = '';
+  let patterns: string[] = [];
   let suggestions: string[] = [];
 
   // Count lines of code (excluding comments and empty lines)
-  const linesOfCode = code.split('\n').filter(line => line.trim() && !line.trim().startsWith('#')).length;
+  const linesOfCode = code.split('\n').filter(line => {
+    const t = line.trim();
+    return t && !t.startsWith('#') && !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*');
+  }).length;
 
   // Calculate cyclomatic complexity (simplified)
-  let cyclomaticComplexity = 1; // Base complexity
-  cyclomaticComplexity += (code.match(/if/g) || []).length;
-  cyclomaticComplexity += (code.match(/for/g) || []).length;
-  cyclomaticComplexity += (code.match(/while/g) || []).length;
-  cyclomaticComplexity += (code.match(/catch/g) || []).length;
+  let cyclomaticComplexity = 1;
+  cyclomaticComplexity += (code.match(/\bif\b/g) || []).length;
+  cyclomaticComplexity += (code.match(/\bfor\b/g) || []).length;
+  cyclomaticComplexity += (code.match(/\bwhile\b/g) || []).length;
+  cyclomaticComplexity += (code.match(/\bcatch\b/g) || []).length;
+
+  // Helper: only upgrade complexity, never downgrade
+  function upgrade(current: string, candidate: string): string {
+    return complexityRank(candidate) > complexityRank(current) ? candidate : current;
+  }
+
+  // Common loop counts used across multiple language cases
+  const forCount = (code.match(/\bfor\b/g) || []).length;
+  const whileCount = (code.match(/\bwhile\b/g) || []).length;
+  const hasLoop = forCount > 0 || whileCount > 0;
+  const hasNestedLoop = forCount + whileCount > 1;
 
   // Language-specific analysis
   switch (language) {
-    case 'python':
-      // Check for print statements (O(1))
+    case 'python': {
       if (code.includes('print(')) {
-        patterns.push({
-          type: 'Print Statement',
-          description: 'Contains print statements',
-          impact: 'O(1) time complexity',
-          suggestion: 'Print statements are efficient for basic output'
-        });
+        patterns.push('Print statement');
         explanation += 'The code contains print statements which have O(1) time complexity.\n';
       }
-
-      // Check for loops
       if (code.includes('for ') || code.includes('while ')) {
-        patterns.push({
-          type: 'Loop',
-          description: 'Contains loops',
-          impact: 'O(n) time complexity',
-          suggestion: 'Consider if loop can be optimized'
-        });
-        highestTimeComplexity = 'O(n)';
+        patterns.push('Loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n)');
         explanation += 'The code contains loops which have O(n) time complexity.\n';
       }
-
-      // Check for nested loops
-      if ((code.match(/for/g) || []).length > 1 || (code.match(/while/g) || []).length > 1) {
-        patterns.push({
-          type: 'Nested Loop',
-          description: 'Contains nested loops',
-          impact: 'O(n²) time complexity',
-          suggestion: 'Consider using more efficient algorithms to avoid nested loops'
-        });
-        highestTimeComplexity = 'O(n²)';
+      if ((code.match(/\bfor\b/g) || []).length > 1 || (code.match(/\bwhile\b/g) || []).length > 1) {
+        patterns.push('Nested loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n²)');
         explanation += 'The code contains nested loops which have O(n²) time complexity.\n';
       }
-
-      // Check for list operations
+      if (code.includes('.sort(') || code.includes('sorted(')) {
+        patterns.push('Sorting operation');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n log n)');
+        explanation += 'The code uses sorting which has O(n log n) time complexity.\n';
+      }
       if (code.includes('list(') || code.includes('[]') || code.includes('.append(')) {
-        patterns.push({
-          type: 'List Operation',
-          description: 'Contains list operations',
-          impact: 'O(n) space complexity',
-          suggestion: 'Consider using more space-efficient data structures if possible'
-        });
-        highestSpaceComplexity = 'O(n)';
+        patterns.push('List operation');
+        highestSpaceComplexity = upgrade(highestSpaceComplexity, 'O(n)');
         explanation += 'The code uses lists which have O(n) space complexity.\n';
       }
-
-      // Check for dictionary operations
       if (code.includes('dict(') || code.includes('{}') || code.includes('.get(')) {
-        patterns.push({
-          type: 'Dictionary Operation',
-          description: 'Contains dictionary operations',
-          impact: 'O(n) space complexity',
-          suggestion: 'Consider if dictionary is necessary for the use case'
-        });
-        highestSpaceComplexity = 'O(n)';
+        patterns.push('Dictionary operation');
+        highestSpaceComplexity = upgrade(highestSpaceComplexity, 'O(n)');
         explanation += 'The code uses dictionaries which have O(n) space complexity.\n';
       }
+      break;
+    }
 
-      // Check for recursive functions
-      if (code.includes('def ') && code.includes('return ') && code.includes('def ')) {
-        patterns.push({
-          type: 'Recursive Function',
-          description: 'Contains recursive functions',
-          impact: 'O(2^n) time complexity',
-          suggestion: 'Consider using iterative solutions for better performance'
-        });
-        highestTimeComplexity = 'O(2^n)';
-        explanation += 'The code contains recursive functions which can have exponential time complexity.\n';
+    case 'javascript':
+    case 'typescript': {
+      if (code.includes('function ') || code.includes('=>')) {
+        patterns.push('Function declaration');
+        explanation += 'The code contains function declarations.\n';
       }
-
-      // Generate suggestions based on patterns
-      if (patterns.some(p => p.type === 'Nested Loop')) {
-        suggestions.push('Consider using more efficient algorithms to avoid nested loops');
+      if (hasLoop || code.includes('.forEach(') || code.includes('.map(') || code.includes('.filter(') || code.includes('.reduce(')) {
+        patterns.push('Loop or array iteration');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n)');
+        explanation += 'The code contains loops or array iterations which have O(n) time complexity.\n';
       }
-      if (cyclomaticComplexity > 5) {
-        suggestions.push('Consider breaking down complex logic into smaller functions');
+      if (hasNestedLoop) {
+        patterns.push('Nested loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n²)');
+        explanation += 'The code contains nested loops which have O(n²) time complexity.\n';
       }
-      if (linesOfCode > 20) {
-        suggestions.push('Consider modularizing the code into separate functions');
+      if (code.includes('.sort(')) {
+        patterns.push('Sorting operation');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n log n)');
+        explanation += 'The code uses array sorting which has O(n log n) time complexity.\n';
+      }
+      if (code.includes('new Array') || code.includes('Array.from') || code.includes('new Map(') || code.includes('new Set(') || /\[\s*\]/.test(code)) {
+        patterns.push('Data structure creation');
+        highestSpaceComplexity = upgrade(highestSpaceComplexity, 'O(n)');
+        explanation += 'The code creates data structures which have O(n) space complexity.\n';
       }
       break;
-    // ... existing code for other languages ...
+    }
+
+    case 'java': {
+      if (hasLoop || code.includes('.forEach(') || code.includes('forEach(')) {
+        patterns.push('Loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n)');
+        explanation += 'The code contains loops which have O(n) time complexity.\n';
+      }
+      if (hasNestedLoop) {
+        patterns.push('Nested loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n²)');
+        explanation += 'The code contains nested loops which have O(n²) time complexity.\n';
+      }
+      if (code.includes('Collections.sort(') || code.includes('Arrays.sort(')) {
+        patterns.push('Sorting operation');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n log n)');
+        explanation += 'The code uses sorting which has O(n log n) time complexity.\n';
+      }
+      if (code.includes('ArrayList') || code.includes('LinkedList') || code.includes('HashMap') || code.includes('HashSet') || /new\s+\w+\[/.test(code)) {
+        patterns.push('Collection creation');
+        highestSpaceComplexity = upgrade(highestSpaceComplexity, 'O(n)');
+        explanation += 'The code uses collections which have O(n) space complexity.\n';
+      }
+      break;
+    }
+
+    case 'c': {
+      if (hasLoop) {
+        patterns.push('Loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n)');
+        explanation += 'The code contains loops which have O(n) time complexity.\n';
+      }
+      if (hasNestedLoop) {
+        patterns.push('Nested loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n²)');
+        explanation += 'The code contains nested loops which have O(n²) time complexity.\n';
+      }
+      if (code.includes('qsort(')) {
+        patterns.push('Sorting operation');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n log n)');
+        explanation += 'The code uses sorting which has O(n log n) time complexity.\n';
+      }
+      if (code.includes('malloc(') || code.includes('calloc(') || /\w+\s+\w+\s*\[/.test(code)) {
+        patterns.push('Dynamic memory allocation');
+        highestSpaceComplexity = upgrade(highestSpaceComplexity, 'O(n)');
+        explanation += 'The code uses dynamic memory allocation which has O(n) space complexity.\n';
+      }
+      break;
+    }
+
+    case 'cpp': {
+      if (hasLoop) {
+        patterns.push('Loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n)');
+        explanation += 'The code contains loops which have O(n) time complexity.\n';
+      }
+      if (hasNestedLoop) {
+        patterns.push('Nested loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n²)');
+        explanation += 'The code contains nested loops which have O(n²) time complexity.\n';
+      }
+      if (code.includes('sort(') || code.includes('std::sort(')) {
+        patterns.push('Sorting operation');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n log n)');
+        explanation += 'The code uses sorting which has O(n log n) time complexity.\n';
+      }
+      if (code.includes('vector<') || code.includes('map<') || code.includes('set<') || code.includes('unordered_map') || /\bnew\s+\w+/.test(code)) {
+        patterns.push('STL container / dynamic allocation');
+        highestSpaceComplexity = upgrade(highestSpaceComplexity, 'O(n)');
+        explanation += 'The code uses STL containers or dynamic allocation which have O(n) space complexity.\n';
+      }
+      break;
+    }
+
+    case 'csharp': {
+      const foreachCount = (code.match(/\bforeach\b/g) || []).length;
+      if (hasLoop || foreachCount > 0) {
+        patterns.push('Loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n)');
+        explanation += 'The code contains loops which have O(n) time complexity.\n';
+      }
+      if (forCount + whileCount + foreachCount > 1) {
+        patterns.push('Nested loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n²)');
+        explanation += 'The code contains nested loops which have O(n²) time complexity.\n';
+      }
+      if (code.includes('.Sort(') || code.includes('.OrderBy(') || code.includes('.ThenBy(')) {
+        patterns.push('Sorting operation');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n log n)');
+        explanation += 'The code uses sorting which has O(n log n) time complexity.\n';
+      }
+      if (code.includes('new List') || code.includes('new Dictionary') || code.includes('new HashSet') || /new\s+\w+\[/.test(code)) {
+        patterns.push('Collection creation');
+        highestSpaceComplexity = upgrade(highestSpaceComplexity, 'O(n)');
+        explanation += 'The code uses collections which have O(n) space complexity.\n';
+      }
+      break;
+    }
+
+    case 'go': {
+      const goForCount = (code.match(/\bfor\b/g) || []).length;
+      if (goForCount > 0) {
+        patterns.push('Loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n)');
+        explanation += 'The code contains loops which have O(n) time complexity.\n';
+      }
+      if (goForCount > 1) {
+        patterns.push('Nested loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n²)');
+        explanation += 'The code contains nested loops which have O(n²) time complexity.\n';
+      }
+      if (code.includes('sort.')) {
+        patterns.push('Sorting operation');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n log n)');
+        explanation += 'The code uses sorting which has O(n log n) time complexity.\n';
+      }
+      if (code.includes('make([]') || code.includes('make(map') || code.includes('append(')) {
+        patterns.push('Slice or map operation');
+        highestSpaceComplexity = upgrade(highestSpaceComplexity, 'O(n)');
+        explanation += 'The code uses slices or maps which have O(n) space complexity.\n';
+      }
+      break;
+    }
+
+    case 'rust': {
+      if (hasLoop || code.includes('loop {') || code.includes('loop{')) {
+        patterns.push('Loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n)');
+        explanation += 'The code contains loops which have O(n) time complexity.\n';
+      }
+      if (hasNestedLoop) {
+        patterns.push('Nested loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n²)');
+        explanation += 'The code contains nested loops which have O(n²) time complexity.\n';
+      }
+      if (code.includes('.sort(') || code.includes('.sort_by(') || code.includes('.sort_unstable(')) {
+        patterns.push('Sorting operation');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n log n)');
+        explanation += 'The code uses sorting which has O(n log n) time complexity.\n';
+      }
+      if (code.includes('Vec::new()') || code.includes('vec![') || code.includes('HashMap::new()') || code.includes('HashSet::new()')) {
+        patterns.push('Collection creation');
+        highestSpaceComplexity = upgrade(highestSpaceComplexity, 'O(n)');
+        explanation += 'The code uses collections which have O(n) space complexity.\n';
+      }
+      break;
+    }
+
+    case 'swift': {
+      if (hasLoop) {
+        patterns.push('Loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n)');
+        explanation += 'The code contains loops which have O(n) time complexity.\n';
+      }
+      if (hasNestedLoop) {
+        patterns.push('Nested loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n²)');
+        explanation += 'The code contains nested loops which have O(n²) time complexity.\n';
+      }
+      if (code.includes('.sorted(') || code.includes('.sort(')) {
+        patterns.push('Sorting operation');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n log n)');
+        explanation += 'The code uses sorting which has O(n log n) time complexity.\n';
+      }
+      if (code.includes('Array(') || code.includes('Dictionary(') || code.includes('Set(') || /\[\s*\]/.test(code)) {
+        patterns.push('Collection creation');
+        highestSpaceComplexity = upgrade(highestSpaceComplexity, 'O(n)');
+        explanation += 'The code uses collections which have O(n) space complexity.\n';
+      }
+      break;
+    }
+
+    case 'kotlin': {
+      if (hasLoop || code.includes('forEach {') || code.includes('forEach{')) {
+        patterns.push('Loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n)');
+        explanation += 'The code contains loops which have O(n) time complexity.\n';
+      }
+      if (hasNestedLoop) {
+        patterns.push('Nested loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n²)');
+        explanation += 'The code contains nested loops which have O(n²) time complexity.\n';
+      }
+      if (code.includes('.sort(') || code.includes('sortedBy(') || code.includes('sortedWith(')) {
+        patterns.push('Sorting operation');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n log n)');
+        explanation += 'The code uses sorting which has O(n log n) time complexity.\n';
+      }
+      if (code.includes('listOf(') || code.includes('mutableListOf(') || code.includes('arrayOf(') || code.includes('mapOf(') || code.includes('mutableMapOf(')) {
+        patterns.push('Collection creation');
+        highestSpaceComplexity = upgrade(highestSpaceComplexity, 'O(n)');
+        explanation += 'The code uses collections which have O(n) space complexity.\n';
+      }
+      break;
+    }
+
+    case 'php': {
+      const foreachCountPHP = (code.match(/\bforeach\b/g) || []).length;
+      if (hasLoop || foreachCountPHP > 0) {
+        patterns.push('Loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n)');
+        explanation += 'The code contains loops which have O(n) time complexity.\n';
+      }
+      if (forCount + whileCount + foreachCountPHP > 1) {
+        patterns.push('Nested loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n²)');
+        explanation += 'The code contains nested loops which have O(n²) time complexity.\n';
+      }
+      if (code.includes('sort(') || code.includes('usort(') || code.includes('asort(') || code.includes('ksort(')) {
+        patterns.push('Sorting operation');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n log n)');
+        explanation += 'The code uses sorting which has O(n log n) time complexity.\n';
+      }
+      if (code.includes('array(') || /\$\w+\s*=\s*\[/.test(code) || /\[\s*\]/.test(code)) {
+        patterns.push('Array creation');
+        highestSpaceComplexity = upgrade(highestSpaceComplexity, 'O(n)');
+        explanation += 'The code uses arrays which have O(n) space complexity.\n';
+      }
+      break;
+    }
+
+    default: {
+      // Generic analysis for any other language
+      if (hasLoop) {
+        patterns.push('Loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n)');
+        explanation += 'The code contains loops which have O(n) time complexity.\n';
+      }
+      if (hasNestedLoop) {
+        patterns.push('Nested loop');
+        highestTimeComplexity = upgrade(highestTimeComplexity, 'O(n²)');
+        explanation += 'The code contains nested loops which have O(n²) time complexity.\n';
+      }
+      break;
+    }
   }
 
-  // If no specific patterns were found, provide a default explanation
+  // Common suggestions based on findings
+  if (patterns.includes('Nested loop')) {
+    suggestions.push('Consider using more efficient algorithms to avoid nested loops');
+  }
+  if (cyclomaticComplexity > 5) {
+    suggestions.push('Consider breaking down complex logic into smaller functions');
+  }
+  if (linesOfCode > 20) {
+    suggestions.push('Consider modularizing the code into separate functions');
+  }
+
   if (!explanation) {
     explanation = 'The code appears to be a simple program with constant time and space complexity.';
   }
@@ -309,12 +535,10 @@ export const analyzeComplexity = (code: string, language: string): ComplexityRes
     explanation,
     detailedAnalysis: {
       patterns,
-      metrics: {
-        cyclomaticComplexity,
-        linesOfCode
-      },
-      impact,
-      suggestions
+      impact: highestTimeComplexity,
+      suggestions,
+      cyclomaticComplexity,
+      linesOfCode
     }
   };
 };
@@ -327,7 +551,8 @@ function complexityRank(complexity: string): number {
     'O(n)': 3,
     'O(n log n)': 4,
     'O(n²)': 5,
-    'O(2ⁿ)': 6
+    'O(2^n)': 6,
+    'O(n!)': 7
   };
   return ranks[complexity] || 0;
 } 

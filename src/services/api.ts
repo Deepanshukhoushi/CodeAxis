@@ -1,8 +1,10 @@
 import axios from 'axios';
 
 // Create axios instance with base URL
+const baseURL = import.meta.env.VITE_API_BASE_URL ?? '/api';
+
 const api = axios.create({
-  baseURL: 'http://localhost:5001/api',
+  baseURL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -13,6 +15,7 @@ api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
     if (token) {
+      config.headers = config.headers ?? {};
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -28,7 +31,7 @@ api.interceptors.response.use(
     if (error.response && error.response.status === 401) {
       // Redirect to login or refresh token logic here
       localStorage.removeItem('token');
-      window.location.href = '/login';
+      window.location.assign('/');
     }
     return Promise.reject(error);
   }

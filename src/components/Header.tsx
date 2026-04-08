@@ -43,7 +43,7 @@ const Header: React.FC = () => {
           <div className="flex items-center">
             <Link to="/" className="flex items-center space-x-2">
               <img
-                src="/public/favicon.svg"
+                src="/favicon.svg"
                 alt="CodeAxis Logo"
                 className="h-8 w-8"
               />
